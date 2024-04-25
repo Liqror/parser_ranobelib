@@ -7,79 +7,137 @@ from ebooklib import epub
 from selenium.common.exceptions import StaleElementReferenceException
 import time
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 
-# можно заставить авторизироваться при входе или автоматически входить на страницу для аворизации вводить логин и пароль, затем перезодить на книгу.
 
-driver = webdriver.Chrome()
-url = 'https://ranobelib.me/full-dive-eternal-phantasy/v1/c7?bid=5086&ui=2012294'
-driver.get(url)
-time.sleep(30)
+# регистрация не работает
 
-# Ждем, пока кнопка загрузится и кликаем по ней _ это если с инфо о книге начинать
-# start_reading_button = WebDriverWait(driver, 10).until(
-#     EC.element_to_be_clickable((By.CLASS_NAME, 'button_primary'))
-# )
-# driver.delete_all_cookies()
-# start_reading_button.click()
+def main():
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    # reg(driver)
+    download(driver)
+    driver.quit()
+    print("Книга сформирована!")
 
-# Создание новой книги EPUB
-book = epub.EpubBook()
-book.set_identifier('1')
-book.set_title('Название')
-book.set_language('ru')
 
-# URL первой главы
-# current_chapter = 0
-# max_chapters = 1  # Максимальное количество глав для загрузки
+def download(driver):
+    time.sleep(5)
+    # Вставьте ссылку на первую главу ранобэ
+    ranobe_url = 'https://ranobelib.me/ru/24701--the-bears-bear-a-bare-kuma-novel/read/v6/c127'
+    driver.get(ranobe_url)
 
-while True:
-# for i in range(1):
-    try:
-        time.sleep(1)  # Подождем, чтобы страница загрузилась полностью
-        # Получение HTML-кода текущей главы
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+    time.sleep(5)
 
-        # Извлечение названия и содержимого текущей главы
-        chapter_title_element = soup.find('a', {'class': 'reader-header-action'})
-        chapter_title = chapter_title_element.find('div', {'data-media-down': 'md'}).text.strip()
-        chapter_content = driver.find_element(By.CLASS_NAME, 'reader-container').get_attribute('innerHTML')
+    # title = driver.find_element(By.CLASS_NAME, 'reader-header-action__text').text
+    title = driver.find_element(By.CLASS_NAME, 'qu_qx').text
+    print("Начали парсинг книги: " + title)
 
-        print("Chapter Title:", chapter_title)
-        # print("Chapter Content:", chapter_content)
+    # Создание новой книги EPUB
+    book = epub.EpubBook()
+    book.set_identifier('1')
+    book.set_title(title)
+    book.set_language('ru')
 
-        # Если данные найдены, создаем объект главы в формате EPUB
-        c = epub.EpubHtml(title=chapter_title, file_name=f'{chapter_title}.xhtml', lang='ru')
-        c.content = chapter_title + chapter_content
+    # Создаем объект оглавления
+    toc = []
 
-        # c.content = "<p>Арарарар</p><p>бабабабабаб</p>"
-        # Добавление главы в книгу
-        book.add_item(c)
-        book.spine.append(c)
 
+    while True:
+    # for i in range(6):
         try:
-            next_chapter_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, 'button_label_right'))
-            )
+            # Подождем, чтобы страница загрузилась полностью
+            time.sleep(3)
 
-            href_attribute = next_chapter_button.get_attribute("href")
+            # Получение HTML-кода текущей главы
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
 
-            if href_attribute == "#":
-                # Выход из цикла, так как href равен "#"
-                break
-            else:
-                # Ваш код для перехода к следующей главе
-                next_chapter_button.click()
+            # Извлечение названия главы (ее номера)
+            links_with_chapter = soup.find_all('a', class_="qu_b7 qu_b0")
+            chapter_title = links_with_chapter[0].find('div', class_='qu_qy', attrs={"data-media-down": "sm"}).text.strip()
 
-        except TimeoutException:
-            # Обработка исключения TimeoutException
-            print("Главы закончились, формирую книгу...")
-            break
+            # Извлечение содержимого главы
+            chapter_title = soup.find('h1', class_='jp_bo').text.strip()
+            paragraphs = soup.find_all('p', {'data-paragraph-index': True})
+            chapter_content = ''.join([str(p) for p in paragraphs])
 
-    except StaleElementReferenceException:
-        # Если элемент не найден, ожидание нового состояния страницы
-        continue
+            print("Добавлена: ", chapter_title)
 
-# Генерация файла EPUB
-epub.write_epub('Польное погрудение.epub', book, {})
-driver.quit()
-print("Книга сформирована!")
+            # Если данные найдены, создаем объект главы в формате EPUB
+            c = epub.EpubHtml(title=chapter_title, file_name=f'{chapter_title}.xhtml', lang='ru')
+            c.content = chapter_title + chapter_content
+            toc.append(c)
+
+            # Добавление главы в книгу
+            book.add_item(c)
+            book.spine.append(c)
+
+            try:
+                next_chapter_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, 'qq_a6'))  # Ищем кнопку "Вперед" или "К Тайтлу"
+                )
+
+                button_text = next_chapter_button.find_element(By.TAG_NAME, 'span').text
+
+                if button_text == "Вперёд":  # Если кнопка "Вперед"
+                    next_chapter_button.click()
+                elif button_text == "К Тайтлу":  # Если кнопка "К Тайтлу"
+                    # Ваш код для выхода к тайтлу
+                    print("Главы закончились, формирую книгу...")
+                    break
+
+            except TimeoutException:
+                # Обработка исключения TimeoutException
+                print("Главы закончились, формирую книгу...")
+
+        except StaleElementReferenceException:
+            # Если элемент не найден, ожидание нового состояния страницы
+            continue
+
+    # Создаем объект оглавления
+    book.toc = tuple(toc)
+
+    # Устанавливаем оглавление в книгу
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    # Заменяем недопустимые символы в названии файла
+    cleaned_title = ''.join(c if c.isalnum() or c.isspace() else '_' for c in title)
+
+    # Формируем имя файла EPUB
+    output_filename = f"{cleaned_title}.epub"
+
+    # Генерация файла EPUB
+    epub.write_epub(output_filename, book, {})
+
+
+# Для книг 16+ нужна регистрация
+def reg(driver):
+    url_login = 'https://ranobelib.me/'
+    driver.get(url_login)
+
+    enter_button = driver.find_element(By.XPATH, "//a[contains(@class,'header__sign-in')]")
+    enter_button.click()
+
+    # Открываем страницу входа
+    # url_login = 'https://lib.social/login'
+    # driver.get(url_login)
+    time.sleep(5)
+
+    # Находим элемент ввода логина по его имени
+    login_input = driver.find_element(By.XPATH, "//input[@name='email']")
+    # Вводим текст в поле
+    login_input.send_keys("liqror")
+
+    # Находим элемент ввода пароля по его имени
+    password_input = driver.find_element(By.XPATH, "//input[@name='password']")
+    # Вводим текст в поле
+    password_input.send_keys("borg2003")
+
+    # Находим кнопку "Войти" и нажимаем на нее
+    login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Войти')]")
+    login_button.click()
+
+
+if __name__ == "__main__":
+    main()
